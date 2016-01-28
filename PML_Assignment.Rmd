@@ -1,0 +1,173 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "John Lilley"
+date: "27 January 2016"
+output: html_document
+---
+
+## Machine Learning Assignment
+
+ 1. The goal of your project is to predict the manner in which they did the exercise. 
+ This is the "classe" variable in the training set. You may use any of the other variables 
+ to predict with. 
+ 2. You should create a report describing how you built your model, 
+ 3. Show how you used cross validation, 
+ 4. Say what you think the expected out of sample error is, 
+ 5. Explain why you made the choices you did. 
+ 6. You will also use your prediction model to predict 20 different test cases.
+
+ download .csv from :  https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+   and                 https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+
+Set working folder to location of the datafaile
+```{r}
+setwd("G:/Data_Science/8_Practical_Machine_Learning/Project")
+```
+
+Import data from .csv files
+```{r}
+traindat = read.csv("pml-training.csv")
+testing_final = read.csv("pml-testing.csv")
+
+library(caret)
+library(AppliedPredictiveModeling)
+```
+
+YaleToolkit::whatis() function to calculate the number of missing values in each column in a data frame. 
+
+It's a very helpful package for this assignment. 
+```{r}
+#install.packages("YaleToolkit")
+library(YaleToolkit)
+
+whatis_df <- whatis(testing_final)
+```
+
+Remove all rows where min and max are NA
+```{r}
+whatis_df_no_na <- whatis_df[!is.na(whatis_df$min) & !is.na(whatis_df$max),]
+```
+
+Get the names of the not NA columns
+```{r}
+na_names <- whatis_df_no_na$variable.name
+na_names2 <- as.character(na_names)
+testing_final2 <- subset(testing_final, select=na_names2)
+```
+
+Look for zero covariates
+```{r}
+nsv <-nearZeroVar(testing_final2,saveMetrics = TRUE)
+nsv
+```
+
+new_window comes up as TRUE so disgard  
+X is just a couter for the row so disgard  
+user_name is not a measure from the accellrometers so disgard  
+raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp and num_windows  
+are all related to time series analysis of the original study using all the data  
+the test data is just 20 records selected at random with no time series data sets  
+so disgard all these columns  
+
+```{r}
+testing_final2  <- subset(testing_final2,select =  -c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+```
+
+Clean up the Training data set in the same way
+```{r}
+na_names3 <- na_names2
+```
+
+Replace problem_id with classe in the names array
+```{r}
+na_names3 <- replace(na_names3, na_names3=="problem_id", "classe")
+
+traindat2 <- subset(traindat, select=na_names3)
+
+traindat2  <- subset(traindat2,select =  -c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,num_window))
+```
+
+Create traning and test data sets in the training data.  
+The testing set will be used in the Out of Sample error check
+```{r}
+inTrain = createDataPartition(traindat2$classe, p = 3/4)[[1]]
+training = traindat2[ inTrain,]
+testing = traindat2[-inTrain,]
+```
+
+See parallel performance hints: 
+https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md
+
+Prepare to run the Fit in parallel
+```{r}
+library(parallel)
+#install.packages("doParallel")
+library(doParallel)
+#install.packages("randomForest")
+library(randomForest)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+```
+
+Method = Cross Validation  with 10 sub-samples
+```{r}
+fitControl <- trainControl(method = "cv", number = 10, allowParallel = TRUE)
+```
+
+Using Random Forest model because it gets good results on non-time-series data
+```{r}
+ModFitrf <- train(classe ~.,method="rf",data=training,trControl = fitControl)
+```
+
+When model fitting returns
+```{r}
+stopCluster(cluster)
+```
+
+##Display the fitted model
+```{r}
+ModFitrf
+confusionMatrix.train(ModFitrf)
+ModFitrf$finalModel
+```
+
+Use the model to predict the the testing results
+```{r}
+modpredict <- predict(ModFitrf, testing_final2)
+modpredict
+```
+
+Answers  
+ 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0  
+ B A B A A E D B A A B C B A E E A B B B
+
+##Out of sample error
+```{r}
+dim(testing)
+```
+
+Predict values using the testing data
+```{r}
+oospredict <- predict(ModFitrf,testing)
+length(oospredict)
+```
+
+Compare predicted values with the actual ones
+```{r}
+oosaccuracy <- sum(oospredict == testing$classe)/length(oospredict)
+oosaccuracy
+```
+
+Calculate the error
+```{r}
+ooserror <- 1-oosaccuracy
+ooserror
+
+ooserrorpercent <- ooserror * 100
+ooserrorpercent
+```
+
+Expected Out of Sample error = 0.734%
+
+
+-------------------End of Document-----------------------
